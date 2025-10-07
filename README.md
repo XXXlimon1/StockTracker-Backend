@@ -103,8 +103,3 @@ StockTracker Backend API, Android mobil uygulaması için RESTful servisler suna
 - PostgreSQL 15 veya SQL Server 2019+
 - Visual Studio 2022 / VS Code / Rider
 - Postman (API test için)
-
-### Adımlar
-
-1. **Projeyi klonlayın**
-```bash
