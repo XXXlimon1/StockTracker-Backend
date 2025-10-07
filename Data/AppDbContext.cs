@@ -9,6 +9,8 @@ namespace StockTracker.API.Data
         {
         }
 
+        public DbSet<StockPrice> StockPrices { get; set; }
+
         public DbSet<User> Users { get; set; }
         public DbSet<Stock> Stocks { get; set; }
         public DbSet<Transaction> Transactions { get; set; }
@@ -63,6 +65,14 @@ namespace StockTracker.API.Data
                     .WithMany()
                     .HasForeignKey(e => e.UserId)
                     .OnDelete(DeleteBehavior.Cascade);
+            });
+
+            modelBuilder.Entity<StockPrice>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Ticker).IsRequired().HasMaxLength(10);
+                entity.HasIndex(e => e.Ticker);
+                entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
             });
         }
     }

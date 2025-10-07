@@ -2,9 +2,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StockTracker.API.Data;
 using StockTracker.API.Models;
+using Microsoft.AspNetCore.Authorization;
 
 namespace StockTracker.API.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class AlertsController : ControllerBase
