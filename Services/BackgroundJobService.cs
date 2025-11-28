@@ -9,13 +9,18 @@ namespace StockTracker.API.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<BackgroundJobService> _logger;
 
-        // Popüler BIST 100 hisseleri (örnek 20 adet)
+        // BIST hisseleri
         private readonly List<string> _popularTickers = new()
         {
-            "AAPL", "GOOGL", "MSFT", "AMZN", "TSLA",
-            "META", "NVDA", "JPM", "V", "WMT",
-            "JNJ", "PG", "MA", "HD", "DIS",
-            "PYPL", "NFLX", "ADBE", "CRM", "INTC"
+             "THYAO.IS",   // Çalışıyor
+             "ASELS.IS",   // Aselsan - test et
+             "TUPRS.IS",   // Tüpraş - test et  
+             "TCELL.IS",   // Turkcell - test et
+             "SAHOL.IS",   // Sabancı - test et
+             "KCHOL.IS",   // Koç - test et
+             "BIMAS.IS",   // BIM - test et
+             "FROTO.IS",   // Ford - test et
+             "EREGL.IS"    // Ereğli - test et
         };
 
         public BackgroundJobService(IServiceProvider serviceProvider, ILogger<BackgroundJobService> logger)
@@ -26,17 +31,17 @@ namespace StockTracker.API.Services
 
         public async Task UpdateStockPrices()
         {
-            _logger.LogInformation("Background job started: Updating stock prices");
+            _logger.LogInformation("Background job started: Updating stock prices with Twelve Data");
 
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var stockPriceService = scope.ServiceProvider.GetRequiredService<StockPriceService>();
+            var twelveDataService = scope.ServiceProvider.GetRequiredService<TwelveDataService>();
 
             foreach (var ticker in _popularTickers)
             {
                 try
                 {
-                    var price = await stockPriceService.GetCurrentPrice(ticker);
+                    var price = await twelveDataService.GetBistPrice(ticker);
 
                     if (price.HasValue)
                     {
@@ -58,7 +63,11 @@ namespace StockTracker.API.Services
                             });
                         }
 
-                        _logger.LogInformation($"Updated price for {ticker}: ${price.Value}");
+                        _logger.LogInformation($"Updated price for {ticker}: ₺{price.Value}");
+                    }
+                    else
+                    {
+                        _logger.LogWarning($"Could not fetch price for {ticker}");
                     }
                 }
                 catch (Exception ex)
@@ -66,8 +75,10 @@ namespace StockTracker.API.Services
                     _logger.LogError(ex, $"Error updating price for {ticker}");
                 }
 
-                // API rate limit için kısa bekleme
-                await Task.Delay(100);
+                // Rate limit: 8 credits/minute
+                // 15 hisse / 8 credit = ~2 dakika
+                // Her hisse arası 8 saniye bekle
+                await Task.Delay(8000);
             }
 
             await context.SaveChangesAsync();

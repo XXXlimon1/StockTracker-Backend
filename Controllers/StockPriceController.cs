@@ -1,10 +1,12 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using StockTracker.API.Services;
 using Microsoft.EntityFrameworkCore;
 using StockTracker.API.Data;
+using StockTracker.API.Services;
 
 namespace StockTracker.API.Controllers
 {
+    [Authorize]
     [Route("api/[controller]")]
     [ApiController]
     public class StockPriceController : ControllerBase

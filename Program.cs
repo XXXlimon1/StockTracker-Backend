@@ -55,8 +55,9 @@ builder.Services.AddHangfireServer();
 builder.Services.AddMemoryCache();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TechnicalAnalysisService>();
-builder.Services.AddHttpClient<StockPriceService>();
 builder.Services.AddScoped<BackgroundJobService>();
+builder.Services.AddHttpClient<StockPriceService>();
+builder.Services.AddHttpClient<TwelveDataService>();
 
 // Health Checks
 builder.Services.AddHealthChecks()
