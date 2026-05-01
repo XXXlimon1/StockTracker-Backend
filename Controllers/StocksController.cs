@@ -78,15 +78,15 @@ namespace StockTracker.API.Controllers
             }
 
             // Her hisse için anlık fiyatı DB'den çek (background job güncelliyor)
-            var tickers = stocks.Select(s => s.Ticker).Distinct().ToList();
+            var tickers = stocks.Select(s => s.Ticker.ToUpper()).Distinct().ToList();
             var currentPrices = await _context.StockPrices
-                .Where(sp => tickers.Contains(sp.Ticker))
-                .ToDictionaryAsync(sp => sp.Ticker, sp => sp.Price);
+                .Where(sp => tickers.Contains(sp.Ticker.ToUpper()))
+                .ToDictionaryAsync(sp => sp.Ticker.ToUpper(), sp => sp.Price);
 
             var stockDetails = stocks.Select(stock =>
             {
                 var ticker = stock.Ticker.Replace(".IS", ""); // THYAO.IS -> THYAO
-                var currentPrice = currentPrices.TryGetValue(stock.Ticker, out var p) ? p : stock.PurchasePrice;
+                var currentPrice = currentPrices.TryGetValue(stock.Ticker.ToUpper(), out var p) ? p : stock.PurchasePrice;
                 var cost = stock.PurchasePrice * stock.Quantity;
                 var currentValue = currentPrice * stock.Quantity;
                 var profitLoss = currentValue - cost;
