@@ -56,8 +56,8 @@ builder.Services.AddMemoryCache();
 builder.Services.AddScoped<AuthService>();
 builder.Services.AddScoped<TechnicalAnalysisService>();
 builder.Services.AddScoped<BackgroundJobService>();
-builder.Services.AddHttpClient<StockPriceService>();
-builder.Services.AddHttpClient<TwelveDataService>();
+// StockPriceService kaldırıldı - artık kullanılmıyor
+builder.Services.AddHttpClient<YahooFinanceService>();
 
 // Health Checks
 builder.Services.AddHealthChecks()

@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StockTracker.API.Data;
-using StockTracker.API.Services;
 
 namespace StockTracker.API.Controllers
 {
@@ -11,66 +10,76 @@ namespace StockTracker.API.Controllers
     [ApiController]
     public class StockPriceController : ControllerBase
     {
-        private readonly StockPriceService _stockPriceService;
         private readonly AppDbContext _context;
 
-        public StockPriceController(StockPriceService stockPriceService, AppDbContext context)
+        public StockPriceController(AppDbContext context)
         {
-            _stockPriceService = stockPriceService;
             _context = context;
         }
 
-        // GET: api/StockPrice/AAPL (Real-time from API)
+        // GET: api/StockPrice/{ticker} — Anlık fiyat (DB'den, background job güncelliyor)
         [HttpGet("{ticker}")]
-        public async Task<ActionResult<decimal?>> GetPrice(string ticker)
+        public async Task<ActionResult> GetPrice(string ticker)
         {
-            var price = await _stockPriceService.GetCurrentPrice(ticker);
+            var fullTicker = ticker.Contains(".IS") ? ticker : ticker + ".IS";
 
-            if (price == null)
-            {
-                return NotFound($"Could not fetch price for {ticker}");
-            }
-
-            return Ok(new { ticker, price });
-        }
-
-        // POST: api/StockPrice/multiple
-        [HttpPost("multiple")]
-        public async Task<ActionResult> GetMultiplePrices([FromBody] List<string> tickers)
-        {
-            var prices = await _stockPriceService.GetMultiplePrices(tickers);
-            return Ok(prices);
-        }
-
-        // GET: api/StockPrice/db/AAPL (From Database - Background Job)
-        [HttpGet("db/{ticker}")]
-        public async Task<ActionResult> GetPriceFromDatabase(string ticker)
-        {
             var stockPrice = await _context.StockPrices
-                .FirstOrDefaultAsync(sp => sp.Ticker.ToUpper() == ticker.ToUpper());
+                .FirstOrDefaultAsync(sp => sp.Ticker.ToUpper() == fullTicker.ToUpper());
 
             if (stockPrice == null)
-            {
-                return NotFound($"No price data found for {ticker}");
-            }
+                return NotFound($"No price data found for {ticker}. Background job may not have run yet.");
 
             return Ok(new
             {
-                ticker = stockPrice.Ticker,
+                ticker = ticker.Replace(".IS", "").ToUpper(),
                 price = stockPrice.Price,
                 updatedAt = stockPrice.UpdatedAt
             });
         }
 
-        // GET: api/StockPrice/db (All prices from Database)
-        [HttpGet("db")]
-        public async Task<ActionResult> GetAllPricesFromDatabase()
+        // GET: api/StockPrice — Tüm takip edilen hisseler
+        [HttpGet]
+        public async Task<ActionResult> GetAllPrices()
         {
             var prices = await _context.StockPrices
                 .OrderBy(sp => sp.Ticker)
+                .Select(sp => new
+                {
+                    ticker = sp.Ticker.Replace(".IS", "").ToUpper(),
+                    price = sp.Price,
+                    updatedAt = sp.UpdatedAt
+                })
                 .ToListAsync();
 
             return Ok(prices);
+        }
+
+        // GET: api/StockPrice/{ticker}/history?days=7 — Fiyat geçmişi (grafik için)
+        [HttpGet("{ticker}/history")]
+        public async Task<ActionResult> GetPriceHistory(string ticker, [FromQuery] int days = 7)
+        {
+            if (days > 30) days = 30; // Max 30 gün
+
+            var fullTicker = ticker.Contains(".IS") ? ticker : ticker + ".IS";
+            var cutoff = DateTime.UtcNow.AddDays(-days);
+
+            var history = await _context.StockPriceHistories
+                .Where(h => h.Ticker.ToUpper() == fullTicker.ToUpper() && h.RecordedAt >= cutoff)
+                .OrderBy(h => h.RecordedAt)
+                .Select(h => new
+                {
+                    price = h.Price,
+                    recordedAt = h.RecordedAt
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                ticker = ticker.Replace(".IS", "").ToUpper(),
+                days,
+                dataPoints = history.Count,
+                history
+            });
         }
     }
 }

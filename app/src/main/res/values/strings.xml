@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">StockTracker</string>
+    <string name="login">Giriş Yap</string>
+    <string name="register">Kayıt Ol</string>
+    <string name="email">E-posta</string>
+    <string name="password">Şifre</string>
+    <string name="portfolio">Portföyüm</string>
+    <string name="alerts">Uyarılar</string>
+    <string name="transactions">İşlemler</string>
+    <string name="add_stock">Hisse Ekle</string>
+    <string name="profit_loss">Kâr/Zarar</string>
+    <string name="total_value">Toplam Değer</string>
+    <string name="loading">Yükleniyor...</string>
+    <string name="error_network">Bağlantı hatası</string>
+    <string name="logout">Çıkış</string>
+</resources>

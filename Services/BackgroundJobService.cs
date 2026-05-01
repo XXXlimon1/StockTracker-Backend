@@ -9,18 +9,17 @@ namespace StockTracker.API.Services
         private readonly IServiceProvider _serviceProvider;
         private readonly ILogger<BackgroundJobService> _logger;
 
-        // BIST hisseleri
         private readonly List<string> _popularTickers = new()
         {
-             "THYAO.IS",   // Çalışıyor
-             "ASELS.IS",   // Aselsan - test et
-             "TUPRS.IS",   // Tüpraş - test et  
-             "TCELL.IS",   // Turkcell - test et
-             "SAHOL.IS",   // Sabancı - test et
-             "KCHOL.IS",   // Koç - test et
-             "BIMAS.IS",   // BIM - test et
-             "FROTO.IS",   // Ford - test et
-             "EREGL.IS"    // Ereğli - test et
+            "THYAO.IS",
+            "ASELS.IS",
+            "TUPRS.IS",
+            "TCELL.IS",
+            "SAHOL.IS",
+            "KCHOL.IS",
+            "BIMAS.IS",
+            "FROTO.IS",
+            "EREGL.IS"
         };
 
         public BackgroundJobService(IServiceProvider serviceProvider, ILogger<BackgroundJobService> logger)
@@ -31,20 +30,21 @@ namespace StockTracker.API.Services
 
         public async Task UpdateStockPrices()
         {
-            _logger.LogInformation("Background job started: Updating stock prices with Twelve Data");
+            _logger.LogInformation("Background job started: Updating stock prices");
 
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var twelveDataService = scope.ServiceProvider.GetRequiredService<TwelveDataService>();
+            var yahooService = scope.ServiceProvider.GetRequiredService<YahooFinanceService>();
 
             foreach (var ticker in _popularTickers)
             {
                 try
                 {
-                    var price = await twelveDataService.GetBistPrice(ticker);
+                    var price = await yahooService.GetPrice(ticker);
 
                     if (price.HasValue)
                     {
+                        // Anlık fiyatı güncelle
                         var existingPrice = await context.StockPrices
                             .FirstOrDefaultAsync(sp => sp.Ticker == ticker);
 
@@ -63,7 +63,18 @@ namespace StockTracker.API.Services
                             });
                         }
 
-                        _logger.LogInformation($"Updated price for {ticker}: ₺{price.Value}");
+                        // Geçmişe kaydet (grafik için)
+                        context.StockPriceHistories.Add(new StockPriceHistory
+                        {
+                            Ticker = ticker,
+                            Price = price.Value,
+                            RecordedAt = DateTime.UtcNow
+                        });
+
+                        _logger.LogInformation($"Updated {ticker}: ₺{price.Value}");
+
+                        // Alert kontrolü
+                        await CheckPriceAlerts(context, ticker, price.Value);
                     }
                     else
                     {
@@ -72,17 +83,49 @@ namespace StockTracker.API.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Error updating price for {ticker}");
+                    _logger.LogError(ex, $"Error updating {ticker}");
                 }
 
-                // Rate limit: 8 credits/minute
-                // 15 hisse / 8 credit = ~2 dakika
-                // Her hisse arası 8 saniye bekle
-                await Task.Delay(8000);
+                await Task.Delay(1000); // Her hisse arası 1 saniye yeterli
             }
 
             await context.SaveChangesAsync();
-            _logger.LogInformation("Background job completed: Stock prices updated");
+            await CleanOldHistory(context);
+
+            _logger.LogInformation("Background job completed");
+        }
+
+        private async Task CheckPriceAlerts(AppDbContext context, string ticker, decimal currentPrice)
+        {
+            var activeAlerts = await context.Alerts
+                .Where(a => a.Ticker == ticker && a.IsActive)
+                .ToListAsync();
+
+            foreach (var alert in activeAlerts)
+            {
+                bool triggered = alert.AlertType switch
+                {
+                    "PRICE_ABOVE" => currentPrice >= alert.TargetValue,
+                    "PRICE_BELOW" => currentPrice <= alert.TargetValue,
+                    _ => false
+                };
+
+                if (triggered)
+                {
+                    alert.IsActive = false;
+                    alert.TriggeredAt = DateTime.UtcNow;
+                    _logger.LogInformation(
+                        $"Alert triggered! UserId={alert.UserId}, {ticker} {alert.AlertType} {alert.TargetValue}, Current={currentPrice}");
+                }
+            }
+        }
+
+        private async Task CleanOldHistory(AppDbContext context)
+        {
+            var cutoff = DateTime.UtcNow.AddDays(-30);
+            var old = context.StockPriceHistories.Where(h => h.RecordedAt < cutoff);
+            context.StockPriceHistories.RemoveRange(old);
+            await context.SaveChangesAsync();
         }
     }
 }

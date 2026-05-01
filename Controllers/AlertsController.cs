@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using StockTracker.API.Data;
 using StockTracker.API.Models;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
 
 namespace StockTracker.API.Controllers
 {
@@ -18,54 +19,89 @@ namespace StockTracker.API.Controllers
             _context = context;
         }
 
-        // GET: api/Alerts/user/5
-        [HttpGet("user/{userId}")]
-        public async Task<ActionResult<IEnumerable<Alert>>> GetUserAlerts(int userId)
+        private int GetCurrentUserId()
         {
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var userId) ? userId : 0;
+        }
+
+        // GET: api/Alerts
+        [HttpGet]
+        public async Task<ActionResult<IEnumerable<Alert>>> GetMyAlerts()
+        {
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
             return await _context.Alerts
                 .Where(a => a.UserId == userId)
                 .OrderByDescending(a => a.CreatedAt)
                 .ToListAsync();
         }
 
+        // GET: api/Alerts/triggered — Tetiklenen alertler
+        [HttpGet("triggered")]
+        public async Task<ActionResult> GetTriggeredAlerts()
+        {
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            var triggered = await _context.Alerts
+                .Where(a => a.UserId == userId && !a.IsActive && a.TriggeredAt.HasValue)
+                .OrderByDescending(a => a.TriggeredAt)
+                .ToListAsync();
+
+            return Ok(triggered);
+        }
+
         // POST: api/Alerts
         [HttpPost]
         public async Task<ActionResult<Alert>> PostAlert(Alert alert)
         {
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            alert.UserId = userId;
+            alert.IsActive = true;
+            alert.CreatedAt = DateTime.UtcNow;
+
             _context.Alerts.Add(alert);
             await _context.SaveChangesAsync();
 
-            return CreatedAtAction(nameof(GetUserAlerts), new { userId = alert.UserId }, alert);
+            return CreatedAtAction(nameof(GetMyAlerts), alert);
         }
 
-        // PUT: api/Alerts/5
-        [HttpPut("{id}")]
-        public async Task<IActionResult> PutAlert(int id, Alert alert)
-        {
-            if (id != alert.Id)
-            {
-                return BadRequest();
-            }
-
-            _context.Entry(alert).State = EntityState.Modified;
-            await _context.SaveChangesAsync();
-
-            return NoContent();
-        }
-
-        // DELETE: api/Alerts/5
+        // DELETE: api/Alerts/{id}
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAlert(int id)
         {
-            var alert = await _context.Alerts.FindAsync(id);
-            if (alert == null)
-            {
-                return NotFound();
-            }
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            var alert = await _context.Alerts
+                .FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId);
+
+            if (alert == null) return NotFound();
 
             _context.Alerts.Remove(alert);
             await _context.SaveChangesAsync();
+            return NoContent();
+        }
 
+        // PUT: api/Alerts/{id}/reactivate — Aleti tekrar aktif et
+        [HttpPut("{id}/reactivate")]
+        public async Task<IActionResult> ReactivateAlert(int id)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            var alert = await _context.Alerts
+                .FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId);
+
+            if (alert == null) return NotFound();
+
+            alert.IsActive = true;
+            alert.TriggeredAt = null;
+            await _context.SaveChangesAsync();
             return NoContent();
         }
     }

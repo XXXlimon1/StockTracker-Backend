@@ -1,0 +1,2 @@
+jitpack reposu için settings.gradle'a ekle:
+maven { url 'https://jitpack.io' }

@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StockTracker.API.Data;
 using StockTracker.API.Models;
+using System.Security.Claims;
 
 namespace StockTracker.API.Controllers
 {
@@ -18,35 +19,28 @@ namespace StockTracker.API.Controllers
             _context = context;
         }
 
-        // GET: api/Users
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<User>>> GetUsers()
+        private int GetCurrentUserId()
         {
-            return await _context.Users.ToListAsync();
+            var claim = User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            return int.TryParse(claim, out var userId) ? userId : 0;
         }
 
-        // GET: api/Users/5
-        [HttpGet("{id}")]
-        public async Task<ActionResult<User>> GetUser(int id)
+        // GET: api/Users/me — Kendi profilini getir
+        // GET: api/Users/me
+        [HttpGet("me")]
+        public async Task<ActionResult> GetMe()
         {
-            var user = await _context.Users.FindAsync(id);
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
 
-            if (user == null)
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return NotFound();
+
+            return Ok(new
             {
-                return NotFound();
-            }
-
-            return user;
-        }
-
-        // POST: api/Users
-        [HttpPost]
-        public async Task<ActionResult<User>> PostUser(User user)
-        {
-            _context.Users.Add(user);
-            await _context.SaveChangesAsync();
-
-            return CreatedAtAction(nameof(GetUser), new { id = user.Id }, user);
+                id = user.Id,
+                email = user.Email
+            });
         }
     }
 }

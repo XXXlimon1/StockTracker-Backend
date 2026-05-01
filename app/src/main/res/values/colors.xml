@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Ana renkler -->
+    <color name="background">#0D1117</color>
+    <color name="surface">#161B22</color>
+    <color name="surface_variant">#21262D</color>
+    <color name="primary">#238636</color>
+    <color name="primary_variant">#2EA043</color>
+
+    <!-- Metin -->
+    <color name="text_primary">#F0F6FC</color>
+    <color name="text_secondary">#8B949E</color>
+
+    <!-- Kâr / Zarar -->
+    <color name="profit">#3FB950</color>
+    <color name="loss">#F85149</color>
+    <color name="neutral">#8B949E</color>
+
+    <!-- Diğer -->
+    <color name="divider">#21262D</color>
+    <color name="white">#FFFFFF</color>
+    <color name="card_background">#161B22</color>
+</resources>
