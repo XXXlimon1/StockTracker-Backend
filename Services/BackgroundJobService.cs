@@ -11,15 +11,8 @@ namespace StockTracker.API.Services
 
         private readonly List<string> _popularTickers = new()
         {
-            "THYAO.IS",
-            "ASELS.IS",
-            "TUPRS.IS",
-            "TCELL.IS",
-            "SAHOL.IS",
-            "KCHOL.IS",
-            "BIMAS.IS",
-            "FROTO.IS",
-            "EREGL.IS"
+            "THYAO.IS", "ASELS.IS", "TUPRS.IS", "TCELL.IS", "SAHOL.IS",
+            "KCHOL.IS", "BIMAS.IS", "FROTO.IS", "EREGL.IS"
         };
 
         public BackgroundJobService(IServiceProvider serviceProvider, ILogger<BackgroundJobService> logger)
@@ -35,6 +28,7 @@ namespace StockTracker.API.Services
             using var scope = _serviceProvider.CreateScope();
             var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var yahooService = scope.ServiceProvider.GetRequiredService<YahooFinanceService>();
+            var fcmService = scope.ServiceProvider.GetRequiredService<FcmService>();
 
             foreach (var ticker in _popularTickers)
             {
@@ -44,7 +38,6 @@ namespace StockTracker.API.Services
 
                     if (price.HasValue)
                     {
-                        // Anlık fiyatı güncelle
                         var existingPrice = await context.StockPrices
                             .FirstOrDefaultAsync(sp => sp.Ticker == ticker);
 
@@ -63,7 +56,6 @@ namespace StockTracker.API.Services
                             });
                         }
 
-                        // Geçmişe kaydet (grafik için)
                         context.StockPriceHistories.Add(new StockPriceHistory
                         {
                             Ticker = ticker,
@@ -72,9 +64,7 @@ namespace StockTracker.API.Services
                         });
 
                         _logger.LogInformation($"Updated {ticker}: ₺{price.Value}");
-
-                        // Alert kontrolü
-                        await CheckPriceAlerts(context, ticker, price.Value);
+                        await CheckPriceAlerts(context, fcmService, ticker, price.Value);
                     }
                     else
                     {
@@ -86,7 +76,7 @@ namespace StockTracker.API.Services
                     _logger.LogError(ex, $"Error updating {ticker}");
                 }
 
-                await Task.Delay(1000); // Her hisse arası 1 saniye yeterli
+                await Task.Delay(1000);
             }
 
             await context.SaveChangesAsync();
@@ -95,9 +85,10 @@ namespace StockTracker.API.Services
             _logger.LogInformation("Background job completed");
         }
 
-        private async Task CheckPriceAlerts(AppDbContext context, string ticker, decimal currentPrice)
+        private async Task CheckPriceAlerts(AppDbContext context, FcmService fcmService, string ticker, decimal currentPrice)
         {
             var activeAlerts = await context.Alerts
+                .Include(a => a.User)
                 .Where(a => a.Ticker == ticker && a.IsActive)
                 .ToListAsync();
 
@@ -114,8 +105,18 @@ namespace StockTracker.API.Services
                 {
                     alert.IsActive = false;
                     alert.TriggeredAt = DateTime.UtcNow;
-                    _logger.LogInformation(
-                        $"Alert triggered! UserId={alert.UserId}, {ticker} {alert.AlertType} {alert.TargetValue}, Current={currentPrice}");
+
+                    _logger.LogInformation($"Alert triggered! UserId={alert.UserId}, {ticker} {alert.AlertType} {alert.TargetValue}");
+
+                    // Push notification gönder
+                    if (alert.User?.FcmToken != null)
+                    {
+                        var direction = alert.AlertType == "PRICE_ABOVE" ? "yükseldi" : "düştü";
+                        var title = $"🔔 {ticker.Replace(".IS", "")} Uyarısı";
+                        var body = $"{ticker.Replace(".IS", "")} hedef fiyat {alert.AlertType == "PRICE_ABOVE" ? "üstüne" : "altına"} indi! Anlık: ₺{currentPrice}";
+
+                        await fcmService.SendNotification(alert.User.FcmToken, title, body);
+                    }
                 }
             }
         }

@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using StockTracker.API.Data;
-using StockTracker.API.Models;
 using System.Security.Claims;
 
 namespace StockTracker.API.Controllers
@@ -25,7 +24,6 @@ namespace StockTracker.API.Controllers
             return int.TryParse(claim, out var userId) ? userId : 0;
         }
 
-        // GET: api/Users/me — Kendi profilini getir
         // GET: api/Users/me
         [HttpGet("me")]
         public async Task<ActionResult> GetMe()
@@ -36,11 +34,28 @@ namespace StockTracker.API.Controllers
             var user = await _context.Users.FindAsync(userId);
             if (user == null) return NotFound();
 
-            return Ok(new
-            {
-                id = user.Id,
-                email = user.Email
-            });
+            return Ok(new { id = user.Id, email = user.Email });
         }
+
+        // PUT: api/Users/fcm-token — FCM token kaydet
+        [HttpPut("fcm-token")]
+        public async Task<IActionResult> UpdateFcmToken([FromBody] FcmTokenRequest request)
+        {
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            var user = await _context.Users.FindAsync(userId);
+            if (user == null) return NotFound();
+
+            user.FcmToken = request.Token;
+            await _context.SaveChangesAsync();
+
+            return Ok();
+        }
+    }
+
+    public class FcmTokenRequest
+    {
+        public string Token { get; set; } = string.Empty;
     }
 }

@@ -58,6 +58,7 @@ builder.Services.AddScoped<TechnicalAnalysisService>();
 builder.Services.AddScoped<BackgroundJobService>();
 // StockPriceService kaldırıldı - artık kullanılmıyor
 builder.Services.AddHttpClient<YahooFinanceService>();
+builder.Services.AddHttpClient<FcmService>();
 
 // Health Checks
 builder.Services.AddHealthChecks()

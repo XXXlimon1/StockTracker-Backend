@@ -15,4 +15,6 @@ RUN dotnet publish -c Release -o /app/publish
 FROM base AS final
 WORKDIR /app
 COPY --from=publish /app/publish .
+# Firebase service account JSON'ı kopyala
+COPY firebase-service-account.json .
 ENTRYPOINT ["dotnet", "StockTracker.API.dll"]
