@@ -120,11 +120,10 @@ RecurringJob.AddOrUpdate<BackgroundJobService>(
 // Global Exception Handler
 app.UseMiddleware<GlobalExceptionHandler>();
 
-if (app.Environment.IsDevelopment())
-{
-    app.UseSwagger();
-    app.UseSwaggerUI();
-}
+
+app.UseSwagger();
+app.UseSwaggerUI();
+
 
 app.UseCors("AllowAll");
 app.UseHttpsRedirection();
