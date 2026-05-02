@@ -2,23 +2,36 @@ namespace StockTracker.API.Services
 {
     public class TechnicalAnalysisService
     {
+        // Wilder's Smoothed RSI - tüm veriyi kullanarak doğru hesaplama
         public decimal CalculateRSI(List<decimal> prices, int period = 14)
         {
             if (prices.Count < period + 1)
                 return 0;
 
-            var gains = new List<decimal>();
-            var losses = new List<decimal>();
+            // İlk ortalama kazanç/kayıp
+            decimal avgGain = 0;
+            decimal avgLoss = 0;
 
-            for (int i = 1; i < prices.Count; i++)
+            for (int i = 1; i <= period; i++)
             {
                 var change = prices[i] - prices[i - 1];
-                gains.Add(change > 0 ? change : 0);
-                losses.Add(change < 0 ? Math.Abs(change) : 0);
+                if (change > 0) avgGain += change;
+                else avgLoss += Math.Abs(change);
             }
 
-            var avgGain = gains.TakeLast(period).Average();
-            var avgLoss = losses.TakeLast(period).Average();
+            avgGain /= period;
+            avgLoss /= period;
+
+            // Wilder'ın smoothed moving average ile devam et
+            for (int i = period + 1; i < prices.Count; i++)
+            {
+                var change = prices[i] - prices[i - 1];
+                var gain = change > 0 ? change : 0;
+                var loss = change < 0 ? Math.Abs(change) : 0;
+
+                avgGain = (avgGain * (period - 1) + gain) / period;
+                avgLoss = (avgLoss * (period - 1) + loss) / period;
+            }
 
             if (avgLoss == 0) return 100;
 
@@ -66,13 +79,10 @@ namespace StockTracker.API.Services
             var sumSquaredDiff = recentPrices.Sum(p => (p - sma) * (p - sma));
             var standardDeviation = (decimal)Math.Sqrt((double)(sumSquaredDiff / period));
 
-            var upper = sma + (multiplier * standardDeviation);
-            var lower = sma - (multiplier * standardDeviation);
-
             return (
-                Math.Round(upper, 2),
+                Math.Round(sma + (multiplier * standardDeviation), 2),
                 Math.Round(sma, 2),
-                Math.Round(lower, 2)
+                Math.Round(sma - (multiplier * standardDeviation), 2)
             );
         }
 
