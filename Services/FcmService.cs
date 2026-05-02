@@ -19,8 +19,25 @@ namespace StockTracker.API.Services
 
         private async Task<string> GetAccessToken()
         {
-            var credential = GoogleCredential.FromFile("/app/firebase-service-account.json")
-                .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
+            GoogleCredential credential;
+
+            // Render'da environment variable'dan oku
+            var serviceAccountJson = Environment.GetEnvironmentVariable("FIREBASE_SERVICE_ACCOUNT");
+
+            if (!string.IsNullOrEmpty(serviceAccountJson))
+            {
+                credential = GoogleCredential.FromJson(serviceAccountJson)
+                    .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
+            }
+            else
+            {
+                // Lokal geliştirme için dosyadan oku
+                var path = File.Exists("firebase-service-account.json")
+                    ? "firebase-service-account.json"
+                    : "/app/firebase-service-account.json";
+                credential = GoogleCredential.FromFile(path)
+                    .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
+            }
 
             var token = await credential.UnderlyingCredential.GetAccessTokenForRequestAsync();
             return token;
