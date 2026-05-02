@@ -134,6 +134,24 @@ namespace StockTracker.API.Controllers
             // userId her zaman token'dan gelsin, body'den değil
             stock.UserId = userId;
 
+            // Aynı ticker zaten varsa birleştir (ağırlıklı ortalama maliyet)
+            var existing = await _context.Stocks
+                .FirstOrDefaultAsync(s => s.UserId == userId &&
+                    s.Ticker.ToUpper() == stock.Ticker.ToUpper());
+
+            if (existing != null)
+            {
+                var totalQuantity = existing.Quantity + stock.Quantity;
+                var avgPrice = ((existing.PurchasePrice * existing.Quantity) +
+                               (stock.PurchasePrice * stock.Quantity)) / totalQuantity;
+
+                existing.Quantity = totalQuantity;
+                existing.PurchasePrice = Math.Round(avgPrice, 2);
+
+                await _context.SaveChangesAsync();
+                return CreatedAtAction(nameof(GetStock), new { id = existing.Id }, existing);
+            }
+
             _context.Stocks.Add(stock);
             await _context.SaveChangesAsync();
 
