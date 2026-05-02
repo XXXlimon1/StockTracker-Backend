@@ -111,9 +111,10 @@ namespace StockTracker.API.Services
                     // Push notification gönder
                     if (alert.User?.FcmToken != null)
                     {
-                        var direction = alert.AlertType == "PRICE_ABOVE" ? "yükseldi" : "düştü";
-                        var title = $"🔔 {ticker.Replace(".IS", "")} Uyarısı";
-                        var body = $"{ticker.Replace(".IS", "")} hedef fiyat {alert.AlertType == "PRICE_ABOVE" ? "üstüne" : "altına"} indi! Anlık: ₺{currentPrice}";
+                        var cleanTicker = ticker.Replace(".IS", "");
+                        var direction = alert.AlertType == "PRICE_ABOVE" ? "üstüne" : "altına";
+                        var title = $"🔔 {cleanTicker} Uyarısı";
+                        var body = $"{cleanTicker} hedef fiyat {direction} indi! Anlık: ₺{currentPrice}";
 
                         await fcmService.SendNotification(alert.User.FcmToken, title, body);
                     }
