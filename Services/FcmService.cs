@@ -21,8 +21,8 @@ namespace StockTracker.API.Services
         {
             GoogleCredential credential;
 
-            // Render'da environment variable'dan oku
             var serviceAccountJson = Environment.GetEnvironmentVariable("FIREBASE_SERVICE_ACCOUNT");
+            _logger.LogInformation($"FIREBASE_SERVICE_ACCOUNT env var: {(string.IsNullOrEmpty(serviceAccountJson) ? "NOT FOUND" : "FOUND, length=" + serviceAccountJson.Length)}");
 
             if (!string.IsNullOrEmpty(serviceAccountJson))
             {
@@ -31,10 +31,10 @@ namespace StockTracker.API.Services
             }
             else
             {
-                // Lokal geliştirme için dosyadan oku
                 var path = File.Exists("firebase-service-account.json")
                     ? "firebase-service-account.json"
                     : "/app/firebase-service-account.json";
+                _logger.LogInformation($"Reading from file: {path}");
                 credential = GoogleCredential.FromFile(path)
                     .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
             }

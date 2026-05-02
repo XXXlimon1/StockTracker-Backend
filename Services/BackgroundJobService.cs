@@ -108,15 +108,19 @@ namespace StockTracker.API.Services
 
                     _logger.LogInformation($"Alert triggered! UserId={alert.UserId}, {ticker} {alert.AlertType} {alert.TargetValue}");
 
-                    // Push notification gönder
-                    if (alert.User?.FcmToken != null)
+                    // User'ı ayrıca çek - FcmToken için
+                    var user = await context.Users.FindAsync(alert.UserId);
+                    _logger.LogInformation($"User found: {user?.Email}, FcmToken: {(user?.FcmToken != null ? "exists" : "null")}");
+
+                    if (user?.FcmToken != null)
                     {
                         var cleanTicker = ticker.Replace(".IS", "");
                         var direction = alert.AlertType == "PRICE_ABOVE" ? "üstüne" : "altına";
                         var title = $"🔔 {cleanTicker} Uyarısı";
-                        var body = $"{cleanTicker} hedef fiyat {direction} indi! Anlık: ₺{currentPrice}";
+                        var body = $"{cleanTicker} hedef fiyat {direction} geçti! Anlık: ₺{currentPrice}";
 
-                        await fcmService.SendNotification(alert.User.FcmToken, title, body);
+                        _logger.LogInformation($"Sending FCM to {user.Email}...");
+                        await fcmService.SendNotification(user.FcmToken, title, body);
                     }
                 }
             }
