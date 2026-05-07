@@ -21,18 +21,34 @@ namespace StockTracker.API.Services
         {
             GoogleCredential credential;
 
-            var serviceAccountJson = Environment.GetEnvironmentVariable("FIREBASE_SERVICE_ACCOUNT");
-            _logger.LogInformation($"FIREBASE_SERVICE_ACCOUNT env var: {(string.IsNullOrEmpty(serviceAccountJson) ? "NOT FOUND" : "FOUND, length=" + serviceAccountJson.Length)}");
+            var privateKey = Environment.GetEnvironmentVariable("FIREBASE_PRIVATE_KEY");
+            var clientEmail = Environment.GetEnvironmentVariable("FIREBASE_CLIENT_EMAIL");
 
-            if (!string.IsNullOrEmpty(serviceAccountJson))
+            if (!string.IsNullOrEmpty(privateKey) && !string.IsNullOrEmpty(clientEmail))
             {
-                // private_key içindeki literal \n'leri gerçek newline'a çevir
-                var fixedJson = serviceAccountJson.Replace("\\n", "\n");
-                credential = GoogleCredential.FromJson(fixedJson)
+                _logger.LogInformation($"Using env vars. Key length: {privateKey.Length}");
+
+                // Render'da \n literal gelir, gerçek newline'a çevir
+                privateKey = privateKey.Replace("\\n", "\n");
+
+                // Service account JSON'ı programatik olarak oluştur
+                var serviceAccountJson = $@"{{
+                    ""type"": ""service_account"",
+                    ""project_id"": ""{_projectId}"",
+                    ""private_key_id"": ""96edf941705b952c5721558a61a45066ffe6d91c"",
+                    ""private_key"": ""{privateKey.Replace("\n", "\\n").Replace("\"", "\\\"")}"",
+                    ""client_email"": ""{clientEmail}"",
+                    ""client_id"": ""101704412167699795740"",
+                    ""auth_uri"": ""https://accounts.google.com/o/oauth2/auth"",
+                    ""token_uri"": ""https://oauth2.googleapis.com/token""
+                }}";
+
+                credential = GoogleCredential.FromJson(serviceAccountJson)
                     .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
             }
             else
             {
+                // Lokal geliştirme için dosyadan oku
                 var path = File.Exists("firebase-service-account.json")
                     ? "firebase-service-account.json"
                     : "/app/firebase-service-account.json";
