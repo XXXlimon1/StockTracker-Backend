@@ -26,8 +26,9 @@ namespace StockTracker.API.Services
 
             if (!string.IsNullOrEmpty(serviceAccountJson))
             {
-                // Render'da \n literal olarak gelebilir, gerçek newline'a çevir
-                var fixedJson = serviceAccountJson.Replace("\\n", "\n");
+                // private_key içindeki literal \n'leri gerçek newline'a çevir
+                var fixedJson = serviceAccountJson.Replace("\n", "
+");
                 credential = GoogleCredential.FromJson(fixedJson)
                     .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
             }
