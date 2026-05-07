@@ -85,7 +85,7 @@ namespace StockTracker.API.Services
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "FCM notification error");
+                _logger.LogError(ex, $"FCM notification error: {ex.Message} | Inner: {ex.InnerException?.Message}");
             }
         }
     }
