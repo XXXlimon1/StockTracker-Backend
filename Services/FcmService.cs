@@ -2,6 +2,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Google.Apis.Auth.OAuth2;
+using System.Security.Cryptography;
 
 namespace StockTracker.API.Services
 {
@@ -19,46 +20,34 @@ namespace StockTracker.API.Services
 
         private async Task<string> GetAccessToken()
         {
-            GoogleCredential credential;
-
             var privateKey = Environment.GetEnvironmentVariable("FIREBASE_PRIVATE_KEY");
             var clientEmail = Environment.GetEnvironmentVariable("FIREBASE_CLIENT_EMAIL");
 
             if (!string.IsNullOrEmpty(privateKey) && !string.IsNullOrEmpty(clientEmail))
             {
-                _logger.LogInformation($"Using env vars. Key length: {privateKey.Length}");
-
-                // Render'da \n literal gelir, gerçek newline'a çevir
+                // \n literal -> gerçek newline
                 privateKey = privateKey.Replace("\\n", "\n");
+                _logger.LogInformation($"Key length after replace: {privateKey.Length}, starts with: {privateKey.Substring(0, 30)}");
 
-                // Service account JSON'ı programatik olarak oluştur
-                var serviceAccountJson = $@"{{
-                    ""type"": ""service_account"",
-                    ""project_id"": ""{_projectId}"",
-                    ""private_key_id"": ""96edf941705b952c5721558a61a45066ffe6d91c"",
-                    ""private_key"": ""{privateKey.Replace("\n", "\\n").Replace("\"", "\\\"")}"",
-                    ""client_email"": ""{clientEmail}"",
-                    ""client_id"": ""101704412167699795740"",
-                    ""auth_uri"": ""https://accounts.google.com/o/oauth2/auth"",
-                    ""token_uri"": ""https://oauth2.googleapis.com/token""
-                }}";
+                var credential = new ServiceAccountCredential(
+                    new ServiceAccountCredential.Initializer(clientEmail)
+                    {
+                        Scopes = new[] { "https://www.googleapis.com/auth/firebase.messaging" }
+                    }.FromPrivateKey(privateKey));
 
-                credential = GoogleCredential.FromJson(serviceAccountJson)
-                    .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
+                var token = await credential.GetAccessTokenForRequestAsync();
+                return token;
             }
             else
             {
-                // Lokal geliştirme için dosyadan oku
                 var path = File.Exists("firebase-service-account.json")
                     ? "firebase-service-account.json"
                     : "/app/firebase-service-account.json";
                 _logger.LogInformation($"Reading from file: {path}");
-                credential = GoogleCredential.FromFile(path)
+                var credential = GoogleCredential.FromFile(path)
                     .CreateScoped("https://www.googleapis.com/auth/firebase.messaging");
+                return await credential.UnderlyingCredential.GetAccessTokenForRequestAsync();
             }
-
-            var token = await credential.UnderlyingCredential.GetAccessTokenForRequestAsync();
-            return token;
         }
 
         public async Task SendNotification(string fcmToken, string title, string body)
@@ -88,20 +77,22 @@ namespace StockTracker.API.Services
                 var json = JsonSerializer.Serialize(message);
                 var content = new StringContent(json, Encoding.UTF8, "application/json");
 
-                _httpClient.DefaultRequestHeaders.Authorization =
-                    new AuthenticationHeaderValue("Bearer", accessToken);
+                var request = new HttpRequestMessage(HttpMethod.Post,
+                    $"https://fcm.googleapis.com/v1/projects/{_projectId}/messages:send");
+                request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+                request.Content = content;
 
-                var url = $"https://fcm.googleapis.com/v1/projects/{_projectId}/messages:send";
-                var response = await _httpClient.PostAsync(url, content);
+                var response = await _httpClient.SendAsync(request);
+                var responseBody = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
                     _logger.LogInformation($"FCM notification sent: {title}");
                 else
-                    _logger.LogWarning($"FCM failed: {await response.Content.ReadAsStringAsync()}");
+                    _logger.LogWarning($"FCM failed: {responseBody}");
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"FCM notification error: {ex.Message} | Inner: {ex.InnerException?.Message}");
+                _logger.LogError(ex, $"FCM error: {ex.Message}");
             }
         }
     }
