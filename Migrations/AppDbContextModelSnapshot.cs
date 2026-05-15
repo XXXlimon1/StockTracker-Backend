@@ -215,6 +215,33 @@ namespace StockTracker.API.Migrations
                     b.ToTable("Users");
                 });
 
+            modelBuilder.Entity("StockTracker.API.Models.Watchlist", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("AddedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Ticker")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "Ticker")
+                        .IsUnique();
+
+                    b.ToTable("Watchlists");
+                });
+
             modelBuilder.Entity("StockTracker.API.Models.Alert", b =>
                 {
                     b.HasOne("StockTracker.API.Models.User", "User")
@@ -238,6 +265,17 @@ namespace StockTracker.API.Migrations
                 });
 
             modelBuilder.Entity("StockTracker.API.Models.Transaction", b =>
+                {
+                    b.HasOne("StockTracker.API.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("StockTracker.API.Models.Watchlist", b =>
                 {
                     b.HasOne("StockTracker.API.Models.User", "User")
                         .WithMany()

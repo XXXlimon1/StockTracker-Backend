@@ -15,6 +15,7 @@ namespace StockTracker.API.Data
         public DbSet<Stock> Stocks { get; set; }
         public DbSet<Transaction> Transactions { get; set; }
         public DbSet<Alert> Alerts { get; set; }
+        public DbSet<Watchlist> Watchlists { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -34,7 +35,6 @@ namespace StockTracker.API.Data
                 entity.Property(e => e.Ticker).IsRequired().HasMaxLength(10);
                 entity.Property(e => e.Quantity).IsRequired();
                 entity.Property(e => e.PurchasePrice).HasColumnType("decimal(18,2)");
-
                 entity.HasOne(e => e.User)
                     .WithMany()
                     .HasForeignKey(e => e.UserId)
@@ -47,7 +47,6 @@ namespace StockTracker.API.Data
                 entity.Property(e => e.Ticker).IsRequired().HasMaxLength(10);
                 entity.Property(e => e.Type).IsRequired().HasMaxLength(10);
                 entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
-
                 entity.HasOne(e => e.User)
                     .WithMany()
                     .HasForeignKey(e => e.UserId)
@@ -60,7 +59,6 @@ namespace StockTracker.API.Data
                 entity.Property(e => e.Ticker).IsRequired().HasMaxLength(10);
                 entity.Property(e => e.AlertType).IsRequired().HasMaxLength(50);
                 entity.Property(e => e.TargetValue).HasColumnType("decimal(18,2)");
-
                 entity.HasOne(e => e.User)
                     .WithMany()
                     .HasForeignKey(e => e.UserId)
@@ -81,6 +79,17 @@ namespace StockTracker.API.Data
                 entity.Property(e => e.Ticker).IsRequired().HasMaxLength(10);
                 entity.Property(e => e.Price).HasColumnType("decimal(18,2)");
                 entity.HasIndex(e => new { e.Ticker, e.RecordedAt });
+            });
+
+            modelBuilder.Entity<Watchlist>(entity =>
+            {
+                entity.HasKey(e => e.Id);
+                entity.Property(e => e.Ticker).IsRequired().HasMaxLength(10);
+                entity.HasOne(e => e.User)
+                    .WithMany()
+                    .HasForeignKey(e => e.UserId)
+                    .OnDelete(DeleteBehavior.Cascade);
+                entity.HasIndex(e => new { e.UserId, e.Ticker }).IsUnique();
             });
         }
     }
