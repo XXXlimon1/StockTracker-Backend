@@ -38,7 +38,7 @@ namespace StockTracker.API.Controllers
                 .ToListAsync();
         }
 
-        // GET: api/Alerts/triggered — Tetiklenen alertler
+        // GET: api/Alerts/triggered
         [HttpGet("triggered")]
         public async Task<ActionResult> GetTriggeredAlerts()
         {
@@ -87,7 +87,24 @@ namespace StockTracker.API.Controllers
             return NoContent();
         }
 
-        // PUT: api/Alerts/{id}/reactivate — Aleti tekrar aktif et
+        // DELETE: api/Alerts/triggered/clear — Tetiklenen alertleri temizle
+        [HttpDelete("triggered/clear")]
+        public async Task<IActionResult> ClearTriggeredAlerts()
+        {
+            var userId = GetCurrentUserId();
+            if (userId == 0) return Unauthorized();
+
+            var triggered = await _context.Alerts
+                .Where(a => a.UserId == userId && !a.IsActive && a.TriggeredAt.HasValue)
+                .ToListAsync();
+
+            _context.Alerts.RemoveRange(triggered);
+            await _context.SaveChangesAsync();
+
+            return Ok(new { cleared = triggered.Count });
+        }
+
+        // PUT: api/Alerts/{id}/reactivate
         [HttpPut("{id}/reactivate")]
         public async Task<IActionResult> ReactivateAlert(int id)
         {
