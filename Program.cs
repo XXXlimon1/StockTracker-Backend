@@ -115,7 +115,7 @@ app.UseHangfireDashboard("/hangfire");
 RecurringJob.AddOrUpdate<BackgroundJobService>(
     "update-stock-prices",
     service => service.UpdateStockPrices(),
-    "*/3 * * * *"); // Cron: Her 3 dakika
+    "*/15 * * * *"); // Cron: Her 15 dakika
 
 // Global Exception Handler
 app.UseMiddleware<GlobalExceptionHandler>();

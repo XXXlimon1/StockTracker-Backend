@@ -84,7 +84,7 @@ namespace StockTracker.API.Services
                     _logger.LogError(ex, $"Error updating {ticker}");
                 }
 
-                await Task.Delay(1000);
+                await Task.Delay(2000); // 2 saniye bekleme - rate limit için
             }
 
             await context.SaveChangesAsync();
