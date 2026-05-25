@@ -11,8 +11,16 @@ namespace StockTracker.API.Services
 
         private readonly List<string> _popularTickers = new()
         {
-            "THYAO.IS", "ASELS.IS", "TUPRS.IS", "TCELL.IS", "SAHOL.IS",
-            "KCHOL.IS", "BIMAS.IS", "FROTO.IS", "EREGL.IS"
+            // BIST 30
+            "AKBNK.IS", "ARCLK.IS", "ASELS.IS", "BIMAS.IS", "DOHOL.IS",
+            "EKGYO.IS", "EREGL.IS", "FROTO.IS", "GARAN.IS", "HALKB.IS",
+            "ISCTR.IS", "KCHOL.IS", "KOZAL.IS", "KRDMD.IS", "MGROS.IS",
+            "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SASA.IS", "SISE.IS",
+            "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TOASO.IS",
+            "TSKB.IS", "TTKOM.IS", "TUPRS.IS", "VAKBN.IS", "YKBNK.IS",
+            // Ana Pazar
+            "AEFES.IS", "ALARK.IS", "ANACM.IS", "BRISA.IS", "CIMSA.IS",
+            "DEVA.IS", "DOAS.IS", "ENKAI.IS", "ALKIM.IS", "BAGFS.IS"
         };
 
         public BackgroundJobService(IServiceProvider serviceProvider, ILogger<BackgroundJobService> logger)

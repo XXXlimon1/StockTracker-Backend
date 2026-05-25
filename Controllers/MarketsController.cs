@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using StockTracker.API.Data;
 using StockTracker.API.Services;
 
 namespace StockTracker.API.Controllers
@@ -9,18 +11,9 @@ namespace StockTracker.API.Controllers
     [ApiController]
     public class MarketsController : ControllerBase
     {
+        private readonly AppDbContext _context;
         private readonly YahooFinanceService _yahooService;
         private readonly ILogger<MarketsController> _logger;
-
-        // In-memory cache - 5 dakika
-        private static Dictionary<string, (List<MarketStockDto> data, DateTime expiry)> _cache = new();
-        private static readonly SemaphoreSlim _cacheLock = new(1, 1);
-
-        public MarketsController(YahooFinanceService yahooService, ILogger<MarketsController> logger)
-        {
-            _yahooService = yahooService;
-            _logger = logger;
-        }
 
         private static readonly List<string> Bist30 = new()
         {
@@ -45,14 +38,21 @@ namespace StockTracker.API.Controllers
             "DEVA", "DOAS", "EGEEN", "ENKAI", "FENER", "GESAN"
         };
 
+        public MarketsController(AppDbContext context, YahooFinanceService yahooService, ILogger<MarketsController> logger)
+        {
+            _context = context;
+            _yahooService = yahooService;
+            _logger = logger;
+        }
+
         [HttpGet("bist30")]
-        public async Task<ActionResult> GetBist30() => await GetPricesCached("bist30", Bist30);
+        public async Task<ActionResult> GetBist30() => await GetFromDb(Bist30);
 
         [HttpGet("yildiz")]
-        public async Task<ActionResult> GetYildizPazar() => await GetPricesCached("yildiz", YildizPazar);
+        public async Task<ActionResult> GetYildizPazar() => await GetFromDb(YildizPazar);
 
         [HttpGet("ana")]
-        public async Task<ActionResult> GetAnaPazar() => await GetPricesCached("ana", AnaPazar);
+        public async Task<ActionResult> GetAnaPazar() => await GetFromDb(AnaPazar);
 
         [HttpGet("search")]
         public async Task<ActionResult> Search([FromQuery] string q)
@@ -62,71 +62,50 @@ namespace StockTracker.API.Controllers
 
             var ticker = q.ToUpper().Trim();
             var fullTicker = ticker.Contains(".IS") ? ticker : $"{ticker}.IS";
+            var cleanTicker = fullTicker.Replace(".IS", "");
 
-            var data = await _yahooService.GetPriceWithChange(fullTicker);
-            if (!data.HasValue)
+            // Önce DB'den bak
+            var cached = await _context.StockPrices
+                .FirstOrDefaultAsync(s => s.Ticker == fullTicker);
+
+            if (cached != null)
+                return Ok(new[] { new { ticker = cleanTicker, price = cached.Price, change = 0m, changePercent = 0m } });
+
+            // DB'de yoksa Yahoo'dan çek
+            var price = await _yahooService.GetPrice(fullTicker);
+            if (!price.HasValue)
                 return NotFound($"{ticker} bulunamadı");
 
-            var cleanTicker = fullTicker.Replace(".IS", "");
-            return Ok(new[] { new MarketStockDto(cleanTicker, data.Value.Price, data.Value.Change, data.Value.ChangePercent) });
+            return Ok(new[] { new { ticker = cleanTicker, price = price.Value, change = 0m, changePercent = 0m } });
         }
 
-        private async Task<ActionResult> GetPricesCached(string key, List<string> tickers)
+        private async Task<ActionResult> GetFromDb(List<string> tickers)
         {
-            // Cache kontrolü
-            if (_cache.TryGetValue(key, out var cached) && cached.expiry > DateTime.UtcNow)
-            {
-                _logger.LogInformation($"Cache hit: {key}");
-                return Ok(cached.data);
-            }
+            var fullTickers = tickers.Select(t => $"{t}.IS").ToList();
 
-            await _cacheLock.WaitAsync();
-            try
-            {
-                // Double-check
-                if (_cache.TryGetValue(key, out cached) && cached.expiry > DateTime.UtcNow)
-                    return Ok(cached.data);
+            // DB'den mevcut fiyatları çek
+            var prices = await _context.StockPrices
+                .Where(s => fullTickers.Contains(s.Ticker))
+                .ToListAsync();
 
-                var result = await FetchParallel(tickers);
-                _cache[key] = (result, DateTime.UtcNow.AddMinutes(5));
-                return Ok(result);
-            }
-            finally
-            {
-                _cacheLock.Release();
-            }
-        }
-
-        private async Task<List<MarketStockDto>> FetchParallel(List<string> tickers)
-        {
-            // Batch'ler halinde paralel çek (5'li gruplar)
-            var result = new System.Collections.Concurrent.ConcurrentBag<MarketStockDto>();
-            var batches = tickers.Chunk(5);
-
-            foreach (var batch in batches)
-            {
-                var tasks = batch.Select(async ticker =>
+            var result = tickers
+                .Select(t =>
                 {
-                    try
+                    var price = prices.FirstOrDefault(p => p.Ticker == $"{t}.IS");
+                    return new
                     {
-                        var price = await _yahooService.GetPrice($"{ticker}.IS");
-                        if (price.HasValue)
-                            result.Add(new MarketStockDto(ticker, price.Value, 0m, 0m));
-                    }
-                    catch { }
-                });
+                        ticker = t,
+                        price = price?.Price ?? 0m,
+                        change = 0m,
+                        changePercent = 0m
+                    };
+                })
+                .Where(r => r.price > 0)
+                .ToList();
 
-                await Task.WhenAll(tasks);
-                await Task.Delay(200); // Batch'ler arası bekleme
-            }
+            _logger.LogInformation($"Markets: Returning {result.Count}/{tickers.Count} from DB cache");
 
-            // Orijinal sıralamayı koru
-            return tickers
-                .Select(t => result.FirstOrDefault(r => r.Ticker == t))
-                .Where(r => r != null)
-                .ToList()!;
+            return Ok(result);
         }
     }
-
-    public record MarketStockDto(string Ticker, decimal Price, decimal Change, decimal ChangePercent);
 }
