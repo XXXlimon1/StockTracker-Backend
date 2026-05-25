@@ -63,17 +63,25 @@ namespace StockTracker.API.Services
         public async Task<Dictionary<string, decimal>> GetBulkPrices(List<string> tickers)
         {
             var result = new Dictionary<string, decimal>();
+            foreach (var (ticker, data) in await GetBulkPricesWithChange(tickers))
+                result[ticker] = data.Price;
+            return result;
+        }
+
+        public async Task<Dictionary<string, (decimal Price, decimal ChangePercent)>> GetBulkPricesWithChange(List<string> tickers)
+        {
+            var result = new Dictionary<string, (decimal, decimal)>();
             var batches = tickers.Chunk(5);
 
             foreach (var batch in batches)
             {
                 foreach (var ticker in batch)
                 {
-                    var price = await GetPrice(ticker);
-                    if (price.HasValue)
-                        result[ticker] = price.Value;
+                    var data = await GetPriceWithChange(ticker);
+                    if (data.HasValue)
+                        result[ticker] = (data.Value.Price, data.Value.ChangePercent);
                 }
-                await Task.Delay(1500); // Her batch sonrası 1.5 saniye bekle
+                await Task.Delay(1500);
             }
 
             return result;
