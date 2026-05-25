@@ -1,15 +1,16 @@
+using FluentValidation;
+using FluentValidation.AspNetCore;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Microsoft.OpenApi.Models;
+using StockTracker.API.Controllers;
 using StockTracker.API.Data;
+using StockTracker.API.Middleware;
 using StockTracker.API.Services;
 using System.Text;
-using FluentValidation;
-using FluentValidation.AspNetCore;
-using StockTracker.API.Middleware;
-using Microsoft.OpenApi.Models;
-using Hangfire;
-using Hangfire.PostgreSql;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -59,6 +60,7 @@ builder.Services.AddScoped<BackgroundJobService>();
 // StockPriceService kaldırıldı - artık kullanılmıyor
 builder.Services.AddHttpClient<YahooFinanceService>();
 builder.Services.AddHttpClient<FcmService>();
+builder.Services.AddHttpClient<AiAnalysisController>();
 
 // Health Checks
 builder.Services.AddHealthChecks()
