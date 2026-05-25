@@ -52,6 +52,10 @@ namespace StockTracker.API.Services
             }
         }
 
+        // Alias for backward compatibility
+        public async Task<List<(DateTime Date, decimal Close)>> GetHistoricalPrices(string ticker, string range = "1mo")
+            => await GetHistory(ticker, range);
+
         public async Task<List<(DateTime Date, decimal Close)>> GetHistory(string ticker, string range = "1mo")
         {
             var result = new List<(DateTime, decimal)>();
