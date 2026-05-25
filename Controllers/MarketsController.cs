@@ -63,12 +63,12 @@ namespace StockTracker.API.Controllers
             var ticker = q.ToUpper().Trim();
             var fullTicker = ticker.Contains(".IS") ? ticker : $"{ticker}.IS";
 
-            var price = await _yahooService.GetPrice(fullTicker);
-            if (!price.HasValue)
+            var data = await _yahooService.GetPriceWithChange(fullTicker);
+            if (!data.HasValue)
                 return NotFound($"{ticker} bulunamadı");
 
             var cleanTicker = fullTicker.Replace(".IS", "");
-            return Ok(new[] { new MarketStockDto(cleanTicker, price.Value, 0m, 0m) });
+            return Ok(new[] { new MarketStockDto(cleanTicker, data.Value.Price, data.Value.Change, data.Value.ChangePercent) });
         }
 
         private async Task<ActionResult> GetPricesCached(string key, List<string> tickers)
