@@ -10,99 +10,83 @@ namespace StockTracker.API.Services
         public YahooFinanceService(HttpClient httpClient, ILogger<YahooFinanceService> logger)
         {
             _httpClient = httpClient;
-            _httpClient.DefaultRequestHeaders.Add("User-Agent",
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
             _logger = logger;
         }
 
         public async Task<decimal?> GetPrice(string ticker)
         {
+            var result = await GetPriceWithChange(ticker);
+            return result?.Price;
+        }
+
+        public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
+        {
             try
             {
-                var symbol = ticker.Contains(".IS") ? ticker : ticker + ".IS";
-                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d";
-
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d";
                 var response = await _httpClient.GetAsync(url);
+
                 if (!response.IsSuccessStatusCode) return null;
 
-                var content = await response.Content.ReadAsStringAsync();
-                var json = JsonDocument.Parse(content);
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
 
-                var price = json.RootElement
-                    .GetProperty("chart")
-                    .GetProperty("result")[0]
-                    .GetProperty("meta")
-                    .GetProperty("regularMarketPrice")
-                    .GetDecimal();
+                var root = doc.RootElement;
+                var result = root.GetProperty("chart").GetProperty("result")[0];
+                var meta = result.GetProperty("meta");
 
-                _logger.LogInformation($"Yahoo Finance: {symbol} = ₺{price}");
-                return price;
+                var currentPrice = meta.GetProperty("regularMarketPrice").GetDecimal();
+                var previousClose = meta.GetProperty("chartPreviousClose").GetDecimal();
+
+                var change = currentPrice - previousClose;
+                var changePercent = previousClose != 0 ? (change / previousClose) * 100 : 0;
+
+                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{currentPrice} ({changePercent:+0.00;-0.00}%)");
+
+                return (currentPrice, change, changePercent);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error fetching {ticker} from Yahoo Finance");
+                _logger.LogWarning($"Yahoo Finance error for {ticker}: {ex.Message}");
                 return null;
             }
         }
 
-        // Geçmiş fiyat verisi - grafik ve teknik analiz için
-        public async Task<List<(DateTime Date, decimal Close)>> GetHistoricalPrices(string ticker, string range = "1mo")
+        public async Task<List<(DateTime Date, decimal Close)>> GetHistory(string ticker, string range = "1mo")
         {
+            var result = new List<(DateTime, decimal)>();
             try
             {
-                var symbol = ticker.Contains(".IS") ? ticker : ticker + ".IS";
-                // interval=1d, range: 5d, 1mo, 3mo, 6mo, 1y
-                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range={range}";
-
-                _logger.LogInformation($"Fetching historical data for {symbol}, range={range}");
-
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={range}";
                 var response = await _httpClient.GetAsync(url);
-                if (!response.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning($"Yahoo Finance historical request failed: {response.StatusCode}");
-                    return new List<(DateTime, decimal)>();
-                }
+                if (!response.IsSuccessStatusCode) return result;
 
-                var content = await response.Content.ReadAsStringAsync();
-                var json = JsonDocument.Parse(content);
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
 
-                var result = json.RootElement
+                var chartResult = doc.RootElement
                     .GetProperty("chart")
                     .GetProperty("result")[0];
 
-                var timestamps = result.GetProperty("timestamp").EnumerateArray()
-                    .Select(t => DateTimeOffset.FromUnixTimeSeconds(t.GetInt64()).UtcDateTime)
-                    .ToList();
-
-                var closes = result
+                var timestamps = chartResult.GetProperty("timestamp").EnumerateArray().ToList();
+                var closes = chartResult
                     .GetProperty("indicators")
                     .GetProperty("quote")[0]
                     .GetProperty("close")
                     .EnumerateArray()
-                    .Select(c => c.ValueKind == JsonValueKind.Null ? 0m : c.GetDecimal())
                     .ToList();
 
-                var data = timestamps.Zip(closes, (date, close) => (date, close))
-                    .Where(x => x.close > 0)
-                    .ToList();
-
-                _logger.LogInformation($"Fetched {data.Count} historical prices for {symbol}");
-                return data;
+                for (int i = 0; i < Math.Min(timestamps.Count, closes.Count); i++)
+                {
+                    if (closes[i].ValueKind == JsonValueKind.Null) continue;
+                    var date = DateTimeOffset.FromUnixTimeSeconds(timestamps[i].GetInt64()).UtcDateTime;
+                    var close = closes[i].GetDecimal();
+                    result.Add((date, close));
+                }
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, $"Error fetching historical data for {ticker}");
-                return new List<(DateTime, decimal)>();
-            }
-        }
-
-        public async Task<Dictionary<string, decimal?>> GetMultiplePrices(List<string> tickers)
-        {
-            var result = new Dictionary<string, decimal?>();
-            foreach (var ticker in tickers)
-            {
-                result[ticker] = await GetPrice(ticker);
-                await Task.Delay(500);
+                _logger.LogWarning($"Yahoo history error for {ticker}: {ex.Message}");
             }
             return result;
         }
