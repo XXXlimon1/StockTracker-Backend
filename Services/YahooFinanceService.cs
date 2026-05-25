@@ -15,31 +15,8 @@ namespace StockTracker.API.Services
 
         public async Task<decimal?> GetPrice(string ticker)
         {
-            try
-            {
-                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1d";
-                var response = await _httpClient.GetAsync(url);
-
-                if (!response.IsSuccessStatusCode) return null;
-
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(json);
-
-                var price = doc.RootElement
-                    .GetProperty("chart")
-                    .GetProperty("result")[0]
-                    .GetProperty("meta")
-                    .GetProperty("regularMarketPrice")
-                    .GetDecimal();
-
-                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{price}");
-                return price;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning($"Yahoo Finance error for {ticker}: {ex.Message}");
-                return null;
-            }
+            var result = await GetBulkPrices(new List<string> { ticker });
+            return result.ContainsKey(ticker) ? result[ticker] : null;
         }
 
         public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
@@ -49,13 +26,67 @@ namespace StockTracker.API.Services
             return (price.Value, 0m, 0m);
         }
 
+        // Bulk fiyat çekme - tek istekte birden fazla ticker
+        public async Task<Dictionary<string, decimal>> GetBulkPrices(List<string> tickers)
+        {
+            var result = new Dictionary<string, decimal>();
+            if (tickers.Count == 0) return result;
+
+            try
+            {
+                var symbols = string.Join(",", tickers);
+                var url = $"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols}&fields=regularMarketPrice";
+
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                request.Headers.Add("Accept", "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning($"Yahoo bulk request failed: {response.StatusCode} for {symbols}");
+                    return result;
+                }
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+
+                var quotes = doc.RootElement
+                    .GetProperty("quoteResponse")
+                    .GetProperty("result");
+
+                foreach (var quote in quotes.EnumerateArray())
+                {
+                    if (quote.TryGetProperty("symbol", out var sym) &&
+                        quote.TryGetProperty("regularMarketPrice", out var price))
+                    {
+                        var ticker = sym.GetString()!;
+                        var priceVal = price.GetDecimal();
+                        result[ticker] = priceVal;
+                        _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{priceVal}");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError($"Yahoo bulk error: {ex.Message}");
+            }
+
+            return result;
+        }
+
         public async Task<List<(DateTime Date, decimal Close)>> GetHistoricalPrices(string ticker, string range = "1mo")
         {
             var result = new List<(DateTime, decimal)>();
             try
             {
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={range}";
-                var response = await _httpClient.GetAsync(url);
+
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+                var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode) return result;
 
                 var json = await response.Content.ReadAsStringAsync();

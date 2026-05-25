@@ -38,53 +38,46 @@ namespace StockTracker.API.Services
             var yahooService = scope.ServiceProvider.GetRequiredService<YahooFinanceService>();
             var fcmService = scope.ServiceProvider.GetRequiredService<FcmService>();
 
-            foreach (var ticker in _popularTickers)
+            // Bulk olarak tüm fiyatları çek - tek istek
+            var prices = await yahooService.GetBulkPrices(_popularTickers);
+            _logger.LogInformation($"Bulk fetch: {prices.Count}/{_popularTickers.Count} prices received");
+
+            foreach (var (ticker, price) in prices)
             {
                 try
                 {
-                    var price = await yahooService.GetPrice(ticker);
+                    var existingPrice = await context.StockPrices
+                        .FirstOrDefaultAsync(sp => sp.Ticker == ticker);
 
-                    if (price.HasValue)
+                    if (existingPrice != null)
                     {
-                        var existingPrice = await context.StockPrices
-                            .FirstOrDefaultAsync(sp => sp.Ticker == ticker);
-
-                        if (existingPrice != null)
-                        {
-                            existingPrice.Price = price.Value;
-                            existingPrice.UpdatedAt = DateTime.UtcNow;
-                        }
-                        else
-                        {
-                            context.StockPrices.Add(new StockPrice
-                            {
-                                Ticker = ticker,
-                                Price = price.Value,
-                                UpdatedAt = DateTime.UtcNow
-                            });
-                        }
-
-                        context.StockPriceHistories.Add(new StockPriceHistory
-                        {
-                            Ticker = ticker,
-                            Price = price.Value,
-                            RecordedAt = DateTime.UtcNow
-                        });
-
-                        _logger.LogInformation($"Updated {ticker}: ₺{price.Value}");
-                        await CheckPriceAlerts(context, fcmService, ticker, price.Value);
+                        existingPrice.Price = price;
+                        existingPrice.UpdatedAt = DateTime.UtcNow;
                     }
                     else
                     {
-                        _logger.LogWarning($"Could not fetch price for {ticker}");
+                        context.StockPrices.Add(new StockPrice
+                        {
+                            Ticker = ticker,
+                            Price = price,
+                            UpdatedAt = DateTime.UtcNow
+                        });
                     }
+
+                    context.StockPriceHistories.Add(new StockPriceHistory
+                    {
+                        Ticker = ticker,
+                        Price = price,
+                        RecordedAt = DateTime.UtcNow
+                    });
+
+                    _logger.LogInformation($"Updated {ticker}: ₺{price}");
+                    await CheckPriceAlerts(context, fcmService, ticker, price);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Error updating {ticker}");
+                    _logger.LogError(ex, $"Error processing {ticker}");
                 }
-
-                await Task.Delay(2000); // 2 saniye bekleme - rate limit için
             }
 
             await context.SaveChangesAsync();
@@ -116,7 +109,6 @@ namespace StockTracker.API.Services
 
                     _logger.LogInformation($"Alert triggered! UserId={alert.UserId}, {ticker} {alert.AlertType} {alert.TargetValue}");
 
-                    // User'ı ayrıca çek - FcmToken için
                     var user = await context.Users.FindAsync(alert.UserId);
                     _logger.LogInformation($"User found: {user?.Email}, FcmToken: {(user?.FcmToken != null ? "exists" : "null")}");
 
