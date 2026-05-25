@@ -36,9 +36,16 @@ namespace StockTracker.API.Services
                 var meta = result.GetProperty("meta");
 
                 var currentPrice = meta.GetProperty("regularMarketPrice").GetDecimal();
-                var previousClose = meta.GetProperty("chartPreviousClose").GetDecimal();
+                
+                decimal previousClose = 0;
+                if (meta.TryGetProperty("chartPreviousClose", out var prev1))
+                    previousClose = prev1.GetDecimal();
+                else if (meta.TryGetProperty("previousClose", out var prev2))
+                    previousClose = prev2.GetDecimal();
+                else if (meta.TryGetProperty("regularMarketPreviousClose", out var prev3))
+                    previousClose = prev3.GetDecimal();
 
-                var change = currentPrice - previousClose;
+                var change = previousClose != 0 ? currentPrice - previousClose : 0;
                 var changePercent = previousClose != 0 ? (change / previousClose) * 100 : 0;
 
                 _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{currentPrice} ({changePercent:+0.00;-0.00}%)");
@@ -47,7 +54,7 @@ namespace StockTracker.API.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning($"Yahoo Finance error for {ticker}: {ex.Message}");
+                _logger.LogError($"Yahoo Finance error for {ticker}: {ex.GetType().Name}: {ex.Message}");
                 return null;
             }
         }
