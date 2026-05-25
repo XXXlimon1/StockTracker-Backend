@@ -15,15 +15,9 @@ namespace StockTracker.API.Services
 
         public async Task<decimal?> GetPrice(string ticker)
         {
-            var result = await GetPriceWithChange(ticker);
-            return result?.Price;
-        }
-
-        public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
-        {
             try
             {
-                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=2d";
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1d";
                 var response = await _httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode) return null;
@@ -31,39 +25,31 @@ namespace StockTracker.API.Services
                 var json = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
 
-                var root = doc.RootElement;
-                var result = root.GetProperty("chart").GetProperty("result")[0];
-                var meta = result.GetProperty("meta");
+                var price = doc.RootElement
+                    .GetProperty("chart")
+                    .GetProperty("result")[0]
+                    .GetProperty("meta")
+                    .GetProperty("regularMarketPrice")
+                    .GetDecimal();
 
-                var currentPrice = meta.GetProperty("regularMarketPrice").GetDecimal();
-                
-                decimal previousClose = 0;
-                if (meta.TryGetProperty("chartPreviousClose", out var prev1))
-                    previousClose = prev1.GetDecimal();
-                else if (meta.TryGetProperty("previousClose", out var prev2))
-                    previousClose = prev2.GetDecimal();
-                else if (meta.TryGetProperty("regularMarketPreviousClose", out var prev3))
-                    previousClose = prev3.GetDecimal();
-
-                var change = previousClose != 0 ? currentPrice - previousClose : 0;
-                var changePercent = previousClose != 0 ? (change / previousClose) * 100 : 0;
-
-                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{currentPrice} ({changePercent:+0.00;-0.00}%)");
-
-                return (currentPrice, change, changePercent);
+                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{price}");
+                return price;
             }
             catch (Exception ex)
             {
-                _logger.LogError($"Yahoo Finance error for {ticker}: {ex.GetType().Name}: {ex.Message}");
+                _logger.LogWarning($"Yahoo Finance error for {ticker}: {ex.Message}");
                 return null;
             }
         }
 
-        // Alias for backward compatibility
-        public async Task<List<(DateTime Date, decimal Close)>> GetHistoricalPrices(string ticker, string range = "1mo")
-            => await GetHistory(ticker, range);
+        public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
+        {
+            var price = await GetPrice(ticker);
+            if (!price.HasValue) return null;
+            return (price.Value, 0m, 0m);
+        }
 
-        public async Task<List<(DateTime Date, decimal Close)>> GetHistory(string ticker, string range = "1mo")
+        public async Task<List<(DateTime Date, decimal Close)>> GetHistoricalPrices(string ticker, string range = "1mo")
         {
             var result = new List<(DateTime, decimal)>();
             try
