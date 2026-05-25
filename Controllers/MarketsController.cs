@@ -10,13 +10,18 @@ namespace StockTracker.API.Controllers
     public class MarketsController : ControllerBase
     {
         private readonly YahooFinanceService _yahooService;
+        private readonly ILogger<MarketsController> _logger;
 
-        public MarketsController(YahooFinanceService yahooService)
+        // In-memory cache - 5 dakika
+        private static Dictionary<string, (List<MarketStockDto> data, DateTime expiry)> _cache = new();
+        private static readonly SemaphoreSlim _cacheLock = new(1, 1);
+
+        public MarketsController(YahooFinanceService yahooService, ILogger<MarketsController> logger)
         {
             _yahooService = yahooService;
+            _logger = logger;
         }
 
-        // BIST 30 hisseleri
         private static readonly List<string> Bist30 = new()
         {
             "AKBNK", "ARCLK", "ASELS", "BIMAS", "DOHOL", "EKGYO", "EREGL",
@@ -26,7 +31,6 @@ namespace StockTracker.API.Controllers
             "VAKBN", "YKBNK"
         };
 
-        // Yıldız Pazar - büyük şirketler
         private static readonly List<string> YildizPazar = new()
         {
             "THYAO", "GARAN", "AKBNK", "ISCTR", "SAHOL", "KCHOL", "FROTO",
@@ -34,7 +38,6 @@ namespace StockTracker.API.Controllers
             "TKFEN", "KOZAL", "TAVHL", "PGSUS", "MGROS", "EKGYO"
         };
 
-        // Ana Pazar - orta büyüklükteki şirketler
         private static readonly List<string> AnaPazar = new()
         {
             "AEFES", "ALARK", "ALGYO", "ALKIM", "ANACM", "ASUZU", "AYCES",
@@ -42,28 +45,15 @@ namespace StockTracker.API.Controllers
             "DEVA", "DOAS", "EGEEN", "ENKAI", "FENER", "GESAN"
         };
 
-        // GET: api/Markets/bist30
         [HttpGet("bist30")]
-        public async Task<ActionResult> GetBist30()
-        {
-            return await GetPrices(Bist30);
-        }
+        public async Task<ActionResult> GetBist30() => await GetPricesCached("bist30", Bist30);
 
-        // GET: api/Markets/yildiz
         [HttpGet("yildiz")]
-        public async Task<ActionResult> GetYildizPazar()
-        {
-            return await GetPrices(YildizPazar);
-        }
+        public async Task<ActionResult> GetYildizPazar() => await GetPricesCached("yildiz", YildizPazar);
 
-        // GET: api/Markets/ana
         [HttpGet("ana")]
-        public async Task<ActionResult> GetAnaPazar()
-        {
-            return await GetPrices(AnaPazar);
-        }
+        public async Task<ActionResult> GetAnaPazar() => await GetPricesCached("ana", AnaPazar);
 
-        // GET: api/Markets/search?q=THY
         [HttpGet("search")]
         public async Task<ActionResult> Search([FromQuery] string q)
         {
@@ -77,40 +67,66 @@ namespace StockTracker.API.Controllers
             if (!price.HasValue)
                 return NotFound($"{ticker} bulunamadı");
 
-            return Ok(new[]
-            {
-                new { ticker, price = price.Value, change = 0m, changePercent = 0m }
-            });
+            var cleanTicker = fullTicker.Replace(".IS", "");
+            return Ok(new[] { new MarketStockDto(cleanTicker, price.Value, 0m, 0m) });
         }
 
-        private async Task<ActionResult> GetPrices(List<string> tickers)
+        private async Task<ActionResult> GetPricesCached(string key, List<string> tickers)
         {
-            var result = new List<object>();
-
-            // Paralel değil, sıralı — Yahoo rate limit'e takılmayalım
-            foreach (var ticker in tickers)
+            // Cache kontrolü
+            if (_cache.TryGetValue(key, out var cached) && cached.expiry > DateTime.UtcNow)
             {
-                try
-                {
-                    var fullTicker = $"{ticker}.IS";
-                    var price = await _yahooService.GetPrice(fullTicker);
-                    if (price.HasValue)
-                    {
-                        result.Add(new
-                        {
-                            ticker,
-                            price = price.Value,
-                            change = 0m,
-                            changePercent = 0m
-                        });
-                    }
-                }
-                catch { }
-
-                await Task.Delay(300); // Rate limit
+                _logger.LogInformation($"Cache hit: {key}");
+                return Ok(cached.data);
             }
 
-            return Ok(result);
+            await _cacheLock.WaitAsync();
+            try
+            {
+                // Double-check
+                if (_cache.TryGetValue(key, out cached) && cached.expiry > DateTime.UtcNow)
+                    return Ok(cached.data);
+
+                var result = await FetchParallel(tickers);
+                _cache[key] = (result, DateTime.UtcNow.AddMinutes(5));
+                return Ok(result);
+            }
+            finally
+            {
+                _cacheLock.Release();
+            }
+        }
+
+        private async Task<List<MarketStockDto>> FetchParallel(List<string> tickers)
+        {
+            // Batch'ler halinde paralel çek (5'li gruplar)
+            var result = new System.Collections.Concurrent.ConcurrentBag<MarketStockDto>();
+            var batches = tickers.Chunk(5);
+
+            foreach (var batch in batches)
+            {
+                var tasks = batch.Select(async ticker =>
+                {
+                    try
+                    {
+                        var price = await _yahooService.GetPrice($"{ticker}.IS");
+                        if (price.HasValue)
+                            result.Add(new MarketStockDto(ticker, price.Value, 0m, 0m));
+                    }
+                    catch { }
+                });
+
+                await Task.WhenAll(tasks);
+                await Task.Delay(200); // Batch'ler arası bekleme
+            }
+
+            // Orijinal sıralamayı koru
+            return tickers
+                .Select(t => result.FirstOrDefault(r => r.Ticker == t))
+                .Where(r => r != null)
+                .ToList()!;
         }
     }
+
+    public record MarketStockDto(string Ticker, decimal Price, decimal Change, decimal ChangePercent);
 }
