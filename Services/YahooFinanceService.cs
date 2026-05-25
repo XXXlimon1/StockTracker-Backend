@@ -15,6 +15,12 @@ namespace StockTracker.API.Services
 
         public async Task<decimal?> GetPrice(string ticker)
         {
+            var result = await GetPriceWithChange(ticker);
+            return result?.Price;
+        }
+
+        public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
+        {
             try
             {
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1d";
@@ -28,28 +34,29 @@ namespace StockTracker.API.Services
                 var json = await response.Content.ReadAsStringAsync();
                 using var doc = JsonDocument.Parse(json);
 
-                var price = doc.RootElement
+                var meta = doc.RootElement
                     .GetProperty("chart")
                     .GetProperty("result")[0]
-                    .GetProperty("meta")
-                    .GetProperty("regularMarketPrice")
-                    .GetDecimal();
+                    .GetProperty("meta");
 
-                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{price}");
-                return price;
+                var price = meta.GetProperty("regularMarketPrice").GetDecimal();
+
+                decimal changePercent = 0m;
+                decimal change = 0m;
+
+                if (meta.TryGetProperty("regularMarketChangePercent", out var pct))
+                    changePercent = pct.GetDecimal();
+                if (meta.TryGetProperty("regularMarketChange", out var chg))
+                    change = chg.GetDecimal();
+
+                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{price} ({changePercent:+0.00;-0.00}%)");
+                return (price, change, changePercent);
             }
             catch (Exception ex)
             {
                 _logger.LogWarning($"Yahoo Finance error for {ticker}: {ex.Message}");
                 return null;
             }
-        }
-
-        public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
-        {
-            var price = await GetPrice(ticker);
-            if (!price.HasValue) return null;
-            return (price.Value, 0m, 0m);
         }
 
         // Batch olarak çek - 5'li gruplar, aralarında bekleme

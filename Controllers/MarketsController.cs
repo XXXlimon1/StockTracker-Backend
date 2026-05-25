@@ -97,7 +97,7 @@ namespace StockTracker.API.Controllers
                         ticker = t,
                         price = price?.Price ?? 0m,
                         change = 0m,
-                        changePercent = 0m
+                        changePercent = price?.ChangePercent ?? 0m
                     };
                 })
                 .Where(r => r.price > 0)

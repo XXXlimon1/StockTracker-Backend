@@ -46,12 +46,17 @@ namespace StockTracker.API.Services
             {
                 try
                 {
+                    // ChangePercent için GetPriceWithChange çağır
+                    var priceWithChange = await yahooService.GetPriceWithChange(ticker);
+                    var changePercent = priceWithChange?.ChangePercent ?? 0m;
+
                     var existingPrice = await context.StockPrices
                         .FirstOrDefaultAsync(sp => sp.Ticker == ticker);
 
                     if (existingPrice != null)
                     {
                         existingPrice.Price = price;
+                        existingPrice.ChangePercent = changePercent;
                         existingPrice.UpdatedAt = DateTime.UtcNow;
                     }
                     else
@@ -60,6 +65,7 @@ namespace StockTracker.API.Services
                         {
                             Ticker = ticker,
                             Price = price,
+                            ChangePercent = changePercent,
                             UpdatedAt = DateTime.UtcNow
                         });
                     }
@@ -71,8 +77,9 @@ namespace StockTracker.API.Services
                         RecordedAt = DateTime.UtcNow
                     });
 
-                    _logger.LogInformation($"Updated {ticker}: ₺{price}");
+                    _logger.LogInformation($"Updated {ticker}: ₺{price} ({changePercent:+0.00;-0.00}%)");
                     await CheckPriceAlerts(context, fcmService, ticker, price);
+                    await Task.Delay(300);
                 }
                 catch (Exception ex)
                 {
