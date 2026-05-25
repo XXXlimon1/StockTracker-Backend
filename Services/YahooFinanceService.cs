@@ -15,8 +15,34 @@ namespace StockTracker.API.Services
 
         public async Task<decimal?> GetPrice(string ticker)
         {
-            var result = await GetBulkPrices(new List<string> { ticker });
-            return result.ContainsKey(ticker) ? result[ticker] : null;
+            try
+            {
+                var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range=1d";
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36");
+                request.Headers.Add("Accept", "application/json");
+
+                var response = await _httpClient.SendAsync(request);
+                if (!response.IsSuccessStatusCode) return null;
+
+                var json = await response.Content.ReadAsStringAsync();
+                using var doc = JsonDocument.Parse(json);
+
+                var price = doc.RootElement
+                    .GetProperty("chart")
+                    .GetProperty("result")[0]
+                    .GetProperty("meta")
+                    .GetProperty("regularMarketPrice")
+                    .GetDecimal();
+
+                _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{price}");
+                return price;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning($"Yahoo Finance error for {ticker}: {ex.Message}");
+                return null;
+            }
         }
 
         public async Task<(decimal Price, decimal Change, decimal ChangePercent)?> GetPriceWithChange(string ticker)
@@ -26,51 +52,21 @@ namespace StockTracker.API.Services
             return (price.Value, 0m, 0m);
         }
 
-        // Bulk fiyat çekme - tek istekte birden fazla ticker
+        // Batch olarak çek - 5'li gruplar, aralarında bekleme
         public async Task<Dictionary<string, decimal>> GetBulkPrices(List<string> tickers)
         {
             var result = new Dictionary<string, decimal>();
-            if (tickers.Count == 0) return result;
+            var batches = tickers.Chunk(5);
 
-            try
+            foreach (var batch in batches)
             {
-                var symbols = string.Join(",", tickers);
-                var url = $"https://query1.finance.yahoo.com/v7/finance/quote?symbols={symbols}&fields=regularMarketPrice";
-
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-                request.Headers.Add("Accept", "application/json");
-
-                var response = await _httpClient.SendAsync(request);
-
-                if (!response.IsSuccessStatusCode)
+                foreach (var ticker in batch)
                 {
-                    _logger.LogWarning($"Yahoo bulk request failed: {response.StatusCode} for {symbols}");
-                    return result;
+                    var price = await GetPrice(ticker);
+                    if (price.HasValue)
+                        result[ticker] = price.Value;
                 }
-
-                var json = await response.Content.ReadAsStringAsync();
-                using var doc = JsonDocument.Parse(json);
-
-                var quotes = doc.RootElement
-                    .GetProperty("quoteResponse")
-                    .GetProperty("result");
-
-                foreach (var quote in quotes.EnumerateArray())
-                {
-                    if (quote.TryGetProperty("symbol", out var sym) &&
-                        quote.TryGetProperty("regularMarketPrice", out var price))
-                    {
-                        var ticker = sym.GetString()!;
-                        var priceVal = price.GetDecimal();
-                        result[ticker] = priceVal;
-                        _logger.LogInformation($"Yahoo Finance: {ticker} = ₺{priceVal}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError($"Yahoo bulk error: {ex.Message}");
+                await Task.Delay(1500); // Her batch sonrası 1.5 saniye bekle
             }
 
             return result;
@@ -82,9 +78,8 @@ namespace StockTracker.API.Services
             try
             {
                 var url = $"https://query1.finance.yahoo.com/v8/finance/chart/{ticker}?interval=1d&range={range}";
-
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36");
 
                 var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode) return result;
