@@ -64,48 +64,88 @@ namespace StockTracker.API.Controllers
             var fullTicker = ticker.Contains(".IS") ? ticker : $"{ticker}.IS";
             var cleanTicker = fullTicker.Replace(".IS", "");
 
-            // Önce DB'den bak
             var cached = await _context.StockPrices
                 .FirstOrDefaultAsync(s => s.Ticker == fullTicker);
 
+            decimal currentPrice = cached?.Price ?? 0m;
+            decimal changePercent = 0m;
+
             if (cached != null)
-                return Ok(new[] { new { ticker = cleanTicker, price = cached.Price, change = 0m, changePercent = 0m } });
+            {
+                changePercent = await CalcDailyChange(fullTicker, currentPrice);
+            }
+            else
+            {
+                var price = await _yahooService.GetPrice(fullTicker);
+                if (!price.HasValue) return NotFound($"{ticker} bulunamadı");
+                currentPrice = price.Value;
+            }
 
-            // DB'de yoksa Yahoo'dan çek
-            var price = await _yahooService.GetPrice(fullTicker);
-            if (!price.HasValue)
-                return NotFound($"{ticker} bulunamadı");
-
-            return Ok(new[] { new { ticker = cleanTicker, price = price.Value, change = 0m, changePercent = 0m } });
+            return Ok(new[] { new { ticker = cleanTicker, price = currentPrice, change = 0m, changePercent } });
         }
 
         private async Task<ActionResult> GetFromDb(List<string> tickers)
         {
             var fullTickers = tickers.Select(t => $"{t}.IS").ToList();
 
-            // DB'den mevcut fiyatları çek
             var prices = await _context.StockPrices
                 .Where(s => fullTickers.Contains(s.Ticker))
+                .ToListAsync();
+
+            // Dün UTC gece yarısı
+            var yesterdayStart = DateTime.UtcNow.Date.AddDays(-1);
+            var yesterdayEnd = DateTime.UtcNow.Date;
+
+            // Dünkü son fiyatları çek
+            var yesterdayPrices = await _context.StockPriceHistories
+                .Where(h => fullTickers.Contains(h.Ticker) &&
+                            h.RecordedAt >= yesterdayStart &&
+                            h.RecordedAt < yesterdayEnd)
+                .GroupBy(h => h.Ticker)
+                .Select(g => new { Ticker = g.Key, Price = g.OrderByDescending(h => h.RecordedAt).First().Price })
                 .ToListAsync();
 
             var result = tickers
                 .Select(t =>
                 {
-                    var price = prices.FirstOrDefault(p => p.Ticker == $"{t}.IS");
+                    var fullT = $"{t}.IS";
+                    var price = prices.FirstOrDefault(p => p.Ticker == fullT);
+                    var yesterday = yesterdayPrices.FirstOrDefault(p => p.Ticker == fullT);
+
+                    decimal changePercent = 0m;
+                    if (price != null && yesterday != null && yesterday.Price != 0)
+                        changePercent = ((price.Price - yesterday.Price) / yesterday.Price) * 100;
+
                     return new
                     {
                         ticker = t,
                         price = price?.Price ?? 0m,
                         change = 0m,
-                        changePercent = price?.ChangePercent ?? 0m
+                        changePercent
                     };
                 })
                 .Where(r => r.price > 0)
                 .ToList();
 
-            _logger.LogInformation($"Markets: Returning {result.Count}/{tickers.Count} from DB cache");
-
+            _logger.LogInformation($"Markets: Returning {result.Count}/{tickers.Count} stocks");
             return Ok(result);
+        }
+
+        private async Task<decimal> CalcDailyChange(string fullTicker, decimal currentPrice)
+        {
+            var yesterdayStart = DateTime.UtcNow.Date.AddDays(-1);
+            var yesterdayEnd = DateTime.UtcNow.Date;
+
+            var yesterdayPrice = await _context.StockPriceHistories
+                .Where(h => h.Ticker == fullTicker &&
+                            h.RecordedAt >= yesterdayStart &&
+                            h.RecordedAt < yesterdayEnd)
+                .OrderByDescending(h => h.RecordedAt)
+                .Select(h => h.Price)
+                .FirstOrDefaultAsync();
+
+            if (yesterdayPrice == 0) return 0m;
+            return ((currentPrice - yesterdayPrice) / yesterdayPrice) * 100;
         }
     }
 }
